@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import TripCalendar from "@/app/components/trip-calendar";
 import { parseCsvRows } from "@/app/lib/csv";
@@ -23,7 +23,14 @@ type CalendarDay = {
   weekday: string;
 };
 
-const csvPath = join(process.cwd(), "app/data/events.csv");
+const defaultDataDirectory = join(process.cwd(), "app/data");
+const dataDirectory = process.env.CALIFY_DATA_DIR ?? defaultDataDirectory;
+const configuredCsvPath = join(dataDirectory, "events.csv");
+const csvPath = existsSync(configuredCsvPath)
+  ? configuredCsvPath
+  : join(defaultDataDirectory, "events.csv");
+
+export const dynamic = "force-dynamic";
 
 const monthNames = [
   "January",

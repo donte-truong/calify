@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type TripEvent = {
   activity: string;
@@ -38,6 +38,7 @@ type CalendarSummary = {
 type Subtask = {
   createdAt: string;
   dateKey: string;
+  endTime: string;
   id: string;
   location: string;
   notes: string;
@@ -46,6 +47,7 @@ type Subtask = {
 };
 
 type FormState = {
+  endTime: string;
   location: string;
   notes: string;
   time: string;
@@ -70,108 +72,33 @@ type TripCalendarProps = {
 const calendarWeekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const emptyForm: FormState = {
+  endTime: "",
   location: "",
   notes: "",
   time: "",
   title: "",
 };
 
-const subtaskStorageKey = "calify:subtasks";
-const subtaskStoreEvent = "calify:subtasks-change";
-const emptySubtasks: Subtask[] = [];
-let cachedSubtasksSnapshot = emptySubtasks;
-let cachedSubtasksValue: string | null = null;
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
-function createSubtaskId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+function apiPath(path: string) {
+  return `${basePath}${path}`;
 }
 
-function isSubtask(value: unknown): value is Subtask {
-  if (!value || typeof value !== "object") {
-    return false;
+function formatTimeRange(startTime: string, endTime?: string) {
+  if (startTime && endTime) {
+    return `${startTime} - ${endTime}`;
   }
 
-  const subtask = value as Partial<Record<keyof Subtask, unknown>>;
-
-  return (
-    typeof subtask.createdAt === "string" &&
-    typeof subtask.dateKey === "string" &&
-    typeof subtask.id === "string" &&
-    typeof subtask.location === "string" &&
-    typeof subtask.notes === "string" &&
-    typeof subtask.time === "string" &&
-    typeof subtask.title === "string" &&
-    /^\d{4}-\d{2}-\d{2}$/.test(subtask.dateKey) &&
-    subtask.title.trim().length > 0
-  );
-}
-
-function readStoredSubtasks() {
-  if (typeof window === "undefined") {
-    return emptySubtasks;
+  if (startTime) {
+    return startTime;
   }
 
-  try {
-    const storedSubtasks = window.localStorage.getItem(subtaskStorageKey);
-
-    if (storedSubtasks === cachedSubtasksValue) {
-      return cachedSubtasksSnapshot;
-    }
-
-    cachedSubtasksValue = storedSubtasks;
-
-    if (!storedSubtasks) {
-      cachedSubtasksSnapshot = emptySubtasks;
-      return cachedSubtasksSnapshot;
-    }
-
-    const parsedSubtasks: unknown = JSON.parse(storedSubtasks);
-    cachedSubtasksSnapshot = Array.isArray(parsedSubtasks)
-      ? sortSubtasks(parsedSubtasks.filter(isSubtask))
-      : emptySubtasks;
-
-    return cachedSubtasksSnapshot;
-  } catch {
-    return emptySubtasks;
-  }
-}
-
-function getServerSubtasksSnapshot() {
-  return emptySubtasks;
-}
-
-function subscribeToSubtaskStore(onStoreChange: () => void) {
-  if (typeof window === "undefined") {
-    return () => {};
+  if (endTime) {
+    return `Until ${endTime}`;
   }
 
-  function handleStorage(event: StorageEvent) {
-    if (event.key === subtaskStorageKey) {
-      onStoreChange();
-    }
-  }
-
-  window.addEventListener("storage", handleStorage);
-  window.addEventListener(subtaskStoreEvent, onStoreChange);
-
-  return () => {
-    window.removeEventListener("storage", handleStorage);
-    window.removeEventListener(subtaskStoreEvent, onStoreChange);
-  };
-}
-
-function writeStoredSubtasks(nextSubtasks: Subtask[]) {
-  const sortedSubtasks = sortSubtasks(nextSubtasks);
-  const nextSubtasksValue = JSON.stringify(sortedSubtasks);
-
-  window.localStorage.setItem(subtaskStorageKey, nextSubtasksValue);
-  cachedSubtasksSnapshot = sortedSubtasks;
-  cachedSubtasksValue = nextSubtasksValue;
-  window.dispatchEvent(new Event(subtaskStoreEvent));
+  return "";
 }
 
 function getEventTone(activity: string) {
@@ -263,19 +190,59 @@ export default function TripCalendar({
   const [form, setForm] = useState<FormState>(emptyForm);
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingSubtasks, setIsLoadingSubtasks] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [selectedDetail, setSelectedDetail] = useState<TaskDetail | null>(null);
   const [selectedDay, setSelectedDay] = useState<CalendarDay | null>(null);
-  const subtasks = useSyncExternalStore(
-    subscribeToSubtaskStore,
-    readStoredSubtasks,
-    getServerSubtasksSnapshot,
-  );
+  const [subtasks, setSubtasks] = useState<Subtask[]>([]);
 
   const subtasksByDate = useMemo(
     () => groupSubtasksByDate(subtasks),
     [subtasks],
   );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSubtasks() {
+      try {
+        const response = await fetch(apiPath("/api/subtasks"), {
+          cache: "no-store",
+        });
+        const data = (await response.json()) as {
+          error?: string;
+          subtasks?: Subtask[];
+        };
+
+        if (!response.ok) {
+          throw new Error(data.error ?? "Subtasks could not be loaded.");
+        }
+
+        if (isMounted) {
+          setSubtasks(sortSubtasks(data.subtasks ?? []));
+          setLoadError("");
+        }
+      } catch (error) {
+        if (isMounted) {
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Subtasks could not be loaded.",
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingSubtasks(false);
+        }
+      }
+    }
+
+    loadSubtasks();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   function openSubtaskForm(day: CalendarDay) {
     setSelectedDetail(null);
@@ -309,7 +276,7 @@ export default function TripCalendar({
       kind: "Subtask",
       location: subtask.location,
       note: subtask.notes,
-      time: subtask.time,
+      time: formatTimeRange(subtask.time, subtask.endTime),
       title: subtask.title,
     });
   }
@@ -318,7 +285,7 @@ export default function TripCalendar({
     setSelectedDetail(null);
   }
 
-  function saveSubtask(event: React.FormEvent<HTMLFormElement>) {
+  async function saveSubtask(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!selectedDay) {
@@ -334,17 +301,30 @@ export default function TripCalendar({
     setFormError("");
 
     try {
-      const savedSubtask: Subtask = {
-        createdAt: new Date().toISOString(),
-        dateKey: selectedDay.dateKey,
-        id: createSubtaskId(),
-        location: form.location.trim(),
-        notes: form.notes.trim(),
-        time: form.time,
-        title: form.title.trim(),
+      const response = await fetch(apiPath("/api/subtasks"), {
+        body: JSON.stringify({
+          dateKey: selectedDay.dateKey,
+          ...form,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+      const data = (await response.json()) as {
+        error?: string;
+        subtask?: Subtask;
       };
 
-      writeStoredSubtasks([...subtasks, savedSubtask]);
+      if (!response.ok || !data.subtask) {
+        throw new Error(data.error ?? "Unable to save subtask.");
+      }
+
+      const savedSubtask = data.subtask;
+
+      setSubtasks((currentSubtasks) =>
+        sortSubtasks([...currentSubtasks, savedSubtask]),
+      );
       setLoadError("");
       closeSubtaskForm();
     } catch (error) {
@@ -356,14 +336,32 @@ export default function TripCalendar({
     }
   }
 
-  function removeSubtask(subtaskId: string) {
+  async function removeSubtask(subtaskId: string) {
+    const previousSubtasks = subtasks;
+
+    setSubtasks((currentSubtasks) =>
+      currentSubtasks.filter((subtask) => subtask.id !== subtaskId),
+    );
+
     try {
-      writeStoredSubtasks(
-        subtasks.filter((subtask) => subtask.id !== subtaskId),
-      );
+      const response = await fetch(apiPath("/api/subtasks"), {
+        body: JSON.stringify({ id: subtaskId }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string };
+        throw new Error(data.error ?? "Subtask could not be removed.");
+      }
+
       setLoadError("");
-    } catch {
+    } catch (error) {
+      setSubtasks(previousSubtasks);
       setLoadError("Subtask could not be removed.");
+      console.error(error);
     }
   }
 
@@ -496,7 +494,10 @@ export default function TripCalendar({
                                   type="button"
                                 >
                                   <span className="block text-xs font-bold uppercase text-zinc-500">
-                                    {subtask.time || "Task"}
+                                    {formatTimeRange(
+                                      subtask.time,
+                                      subtask.endTime,
+                                    ) || "Task"}
                                   </span>
                                   <span className="mt-1 block text-sm font-bold leading-5">
                                     {subtask.title}
@@ -536,6 +537,11 @@ export default function TripCalendar({
           <aside className="border border-zinc-200 bg-white shadow-sm xl:sticky xl:top-8 xl:max-h-[calc(100vh-4rem)] xl:overflow-auto">
             <div className="border-b border-zinc-200 px-5 py-4">
               <h2 className="text-xl font-bold">Itinerary</h2>
+              {isLoadingSubtasks ? (
+                <p className="mt-2 text-sm font-medium text-zinc-500">
+                  Loading shared subtasks...
+                </p>
+              ) : null}
               {loadError ? (
                 <p className="mt-2 text-sm font-medium text-rose-700">
                   {loadError}
@@ -584,42 +590,49 @@ export default function TripCalendar({
 
                         {eventSubtasks.length ? (
                           <ul className="mt-3 grid gap-2">
-                            {eventSubtasks.map((subtask) => (
-                              <li
-                                className="relative max-h-28 overflow-hidden border-l-4 border-zinc-300 bg-zinc-50 text-sm"
-                                key={subtask.id}
-                              >
-                                <button
-                                  className="block w-full px-3 py-2 pr-11 text-left transition hover:ring-1 hover:ring-zinc-300 focus:outline-none focus:ring-2 focus:ring-teal-600"
-                                  onClick={() =>
-                                    openSubtaskDetails(
-                                      subtask,
-                                      tripEvent.fullDate,
-                                    )
-                                  }
-                                  type="button"
+                            {eventSubtasks.map((subtask) => {
+                              const subtaskTime = formatTimeRange(
+                                subtask.time,
+                                subtask.endTime,
+                              );
+
+                              return (
+                                <li
+                                  className="relative max-h-28 overflow-hidden border-l-4 border-zinc-300 bg-zinc-50 text-sm"
+                                  key={subtask.id}
                                 >
-                                  <span className="block font-semibold">
-                                    {subtask.time ? `${subtask.time} - ` : ""}
-                                    {subtask.title}
-                                  </span>
-                                  {subtask.location ? (
-                                    <span className="mt-1 block text-xs font-semibold text-teal-800">
-                                      {subtask.location}
+                                  <button
+                                    className="block w-full px-3 py-2 pr-11 text-left transition hover:ring-1 hover:ring-zinc-300 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                                    onClick={() =>
+                                      openSubtaskDetails(
+                                        subtask,
+                                        tripEvent.fullDate,
+                                      )
+                                    }
+                                    type="button"
+                                  >
+                                    <span className="block font-semibold">
+                                      {subtaskTime ? `${subtaskTime} - ` : ""}
+                                      {subtask.title}
                                     </span>
-                                  ) : null}
-                                </button>
-                                <button
-                                  aria-label={`Remove ${subtask.title}`}
-                                  className="absolute right-2 top-2 flex h-6 w-6 shrink-0 items-center justify-center border border-zinc-300 bg-white text-xs font-bold text-zinc-500 transition hover:border-rose-400 hover:text-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                                  onClick={() => removeSubtask(subtask.id)}
-                                  title="Remove subtask"
-                                  type="button"
-                                >
-                                  x
-                                </button>
-                              </li>
-                            ))}
+                                    {subtask.location ? (
+                                      <span className="mt-1 block text-xs font-semibold text-teal-800">
+                                        {subtask.location}
+                                      </span>
+                                    ) : null}
+                                  </button>
+                                  <button
+                                    aria-label={`Remove ${subtask.title}`}
+                                    className="absolute right-2 top-2 flex h-6 w-6 shrink-0 items-center justify-center border border-zinc-300 bg-white text-xs font-bold text-zinc-500 transition hover:border-rose-400 hover:text-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                                    onClick={() => removeSubtask(subtask.id)}
+                                    title="Remove subtask"
+                                    type="button"
+                                  >
+                                    x
+                                  </button>
+                                </li>
+                              );
+                            })}
                           </ul>
                         ) : null}
                       </div>
@@ -683,7 +696,7 @@ export default function TripCalendar({
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="grid gap-2 text-sm font-semibold text-zinc-700">
-                  Time
+                  Start Time
                   <input
                     className="h-11 border border-zinc-300 px-3 text-base font-normal text-zinc-950 outline-none transition focus:border-teal-600"
                     onChange={(event) =>
@@ -698,6 +711,22 @@ export default function TripCalendar({
                 </label>
 
                 <label className="grid gap-2 text-sm font-semibold text-zinc-700">
+                  End Time
+                  <input
+                    className="h-11 border border-zinc-300 px-3 text-base font-normal text-zinc-950 outline-none transition focus:border-teal-600"
+                    min={form.time || undefined}
+                    onChange={(event) =>
+                      setForm((currentForm) => ({
+                        ...currentForm,
+                        endTime: event.target.value,
+                      }))
+                    }
+                    type="time"
+                    value={form.endTime}
+                  />
+                </label>
+
+                <label className="grid gap-2 text-sm font-semibold text-zinc-700 sm:col-span-2">
                   Location
                   <input
                     className="h-11 border border-zinc-300 px-3 text-base font-normal text-zinc-950 outline-none transition focus:border-teal-600"

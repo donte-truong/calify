@@ -5,20 +5,21 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 First, run the development server:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+bun run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Calendar events are loaded from `app/data/events.csv`. Shared subtasks are stored server-side in `app/data/subtasks.csv` by default and are served through `/api/subtasks`, so every user connected to the same running app sees the same subtasks.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+For production, run this as a Next.js server rather than a static export:
+
+```bash
+bun run build
+bun run start
+```
+
+Set `CALIFY_DATA_DIR` to a durable writable directory when deploying, for example a mounted volume. When that directory contains `events.csv`, the app uses it for calendar events; subtasks are always read from and written to `subtasks.csv` in that directory. GitHub Pages cannot host the shared subtask API because it only serves static files.
 
 ## Learn More
 
