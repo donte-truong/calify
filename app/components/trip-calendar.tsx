@@ -52,6 +52,15 @@ type FormState = {
   title: string;
 };
 
+type TaskDetail = {
+  eyebrow: string;
+  kind: string;
+  location?: string;
+  note: string;
+  time?: string;
+  title: string;
+};
+
 type TripCalendarProps = {
   events: TripEvent[];
   summary: CalendarSummary;
@@ -255,6 +264,7 @@ export default function TripCalendar({
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [selectedDetail, setSelectedDetail] = useState<TaskDetail | null>(null);
   const [selectedDay, setSelectedDay] = useState<CalendarDay | null>(null);
   const subtasks = useSyncExternalStore(
     subscribeToSubtaskStore,
@@ -268,6 +278,7 @@ export default function TripCalendar({
   );
 
   function openSubtaskForm(day: CalendarDay) {
+    setSelectedDetail(null);
     setSelectedDay(day);
     setForm(emptyForm);
     setFormError("");
@@ -281,6 +292,30 @@ export default function TripCalendar({
     setSelectedDay(null);
     setForm(emptyForm);
     setFormError("");
+  }
+
+  function openTripEventDetails(tripEvent: TripEvent) {
+    setSelectedDetail({
+      eyebrow: `${tripEvent.tripDay} - ${tripEvent.fullDate}`,
+      kind: "Scheduled Event",
+      note: tripEvent.note,
+      title: tripEvent.activity,
+    });
+  }
+
+  function openSubtaskDetails(subtask: Subtask, fullDate: string) {
+    setSelectedDetail({
+      eyebrow: fullDate,
+      kind: "Subtask",
+      location: subtask.location,
+      note: subtask.notes,
+      time: subtask.time,
+      title: subtask.title,
+    });
+  }
+
+  function closeTaskDetails() {
+    setSelectedDetail(null);
   }
 
   function saveSubtask(event: React.FormEvent<HTMLFormElement>) {
@@ -367,7 +402,7 @@ export default function TripCalendar({
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-8 lg:px-10">
+      <section className="w-full px-5 py-8 sm:px-8 lg:px-10">
         <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_360px]">
           <section className="overflow-hidden border border-zinc-200 bg-white shadow-sm">
             <div className="flex flex-col gap-2 border-b border-zinc-200 px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
@@ -426,58 +461,66 @@ export default function TripCalendar({
                             </div>
 
                             {day.events.map((tripEvent) => (
-                              <article
-                                className={`border-l-4 px-3 py-2 ${getEventTone(
+                              <button
+                                className={`block max-h-36 w-full cursor-pointer overflow-hidden border-l-4 px-3 py-2 text-left transition hover:ring-1 hover:ring-zinc-300 focus:outline-none focus:ring-2 focus:ring-teal-600 ${getEventTone(
                                   tripEvent.activity,
                                 )}`}
                                 key={`${tripEvent.dateKey}-${tripEvent.tripDay}`}
+                                onClick={() => openTripEventDetails(tripEvent)}
+                                type="button"
                               >
-                                <p className="text-xs font-bold uppercase">
+                                <span className="block text-xs font-bold uppercase">
                                   {tripEvent.tripDay}
-                                </p>
-                                <h3 className="mt-1 text-sm font-bold leading-5">
+                                </span>
+                                <span className="mt-1 block text-sm font-bold leading-5">
                                   {tripEvent.activity}
-                                </h3>
+                                </span>
                                 {tripEvent.note ? (
-                                  <p className="mt-2 break-words text-xs leading-5">
-                                    {renderNote(tripEvent.note)}
-                                  </p>
+                                  <span className="mt-2 block break-words text-xs leading-5">
+                                    {tripEvent.note}
+                                  </span>
                                 ) : null}
-                              </article>
+                              </button>
                             ))}
 
                             {daySubtasks.map((subtask) => (
                               <article
-                                className="border-l-4 border-zinc-400 bg-[#fbfcfb] px-3 py-2 text-zinc-800"
+                                className="relative max-h-36 overflow-hidden border-l-4 border-zinc-400 bg-[#fbfcfb] text-zinc-800"
                                 key={subtask.id}
                               >
-                                <div className="flex items-start justify-between gap-2">
-                                  <p className="text-xs font-bold uppercase text-zinc-500">
+                                <button
+                                  className="block w-full px-3 py-2 pr-11 text-left transition hover:ring-1 hover:ring-zinc-300 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                                  onClick={() =>
+                                    openSubtaskDetails(subtask, day.fullDate)
+                                  }
+                                  type="button"
+                                >
+                                  <span className="block text-xs font-bold uppercase text-zinc-500">
                                     {subtask.time || "Task"}
-                                  </p>
-                                  <button
-                                    aria-label={`Remove ${subtask.title}`}
-                                    className="flex h-6 w-6 shrink-0 items-center justify-center border border-zinc-300 bg-white text-xs font-bold text-zinc-500 transition hover:border-rose-400 hover:text-rose-700"
-                                    onClick={() => removeSubtask(subtask.id)}
-                                    title="Remove subtask"
-                                    type="button"
-                                  >
-                                    x
-                                  </button>
-                                </div>
-                                <h4 className="mt-1 text-sm font-bold leading-5">
-                                  {subtask.title}
-                                </h4>
-                                {subtask.location ? (
-                                  <p className="mt-1 text-xs font-semibold text-teal-800">
-                                    {subtask.location}
-                                  </p>
-                                ) : null}
-                                {subtask.notes ? (
-                                  <p className="mt-1 break-words text-xs leading-5 text-zinc-600">
-                                    {subtask.notes}
-                                  </p>
-                                ) : null}
+                                  </span>
+                                  <span className="mt-1 block text-sm font-bold leading-5">
+                                    {subtask.title}
+                                  </span>
+                                  {subtask.location ? (
+                                    <span className="mt-1 block text-xs font-semibold text-teal-800">
+                                      {subtask.location}
+                                    </span>
+                                  ) : null}
+                                  {subtask.notes ? (
+                                    <span className="mt-1 block break-words text-xs leading-5 text-zinc-600">
+                                      {subtask.notes}
+                                    </span>
+                                  ) : null}
+                                </button>
+                                <button
+                                  aria-label={`Remove ${subtask.title}`}
+                                  className="absolute right-2 top-2 flex h-6 w-6 shrink-0 items-center justify-center border border-zinc-300 bg-white text-xs font-bold text-zinc-500 transition hover:border-rose-400 hover:text-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                                  onClick={() => removeSubtask(subtask.id)}
+                                  title="Remove subtask"
+                                  type="button"
+                                >
+                                  x
+                                </button>
                               </article>
                             ))}
                           </div>
@@ -521,45 +564,60 @@ export default function TripCalendar({
                       </div>
 
                       <div className="min-w-0">
-                        <p className="text-xs font-bold uppercase text-teal-700">
-                          {tripEvent.tripDay} - {tripEvent.fullDate}
-                        </p>
-                        <h3 className="mt-1 font-bold leading-6">
-                          {tripEvent.activity}
-                        </h3>
-                        {tripEvent.note ? (
-                          <p className="mt-2 break-words text-sm leading-6 text-zinc-600">
-                            {renderNote(tripEvent.note)}
-                          </p>
-                        ) : null}
+                        <button
+                          className="block max-h-40 w-full overflow-hidden text-left transition hover:text-teal-900 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                          onClick={() => openTripEventDetails(tripEvent)}
+                          type="button"
+                        >
+                          <span className="block text-xs font-bold uppercase text-teal-700">
+                            {tripEvent.tripDay} - {tripEvent.fullDate}
+                          </span>
+                          <span className="mt-1 block font-bold leading-6">
+                            {tripEvent.activity}
+                          </span>
+                          {tripEvent.note ? (
+                            <span className="mt-2 block break-words text-sm leading-6 text-zinc-600">
+                              {tripEvent.note}
+                            </span>
+                          ) : null}
+                        </button>
 
                         {eventSubtasks.length ? (
                           <ul className="mt-3 grid gap-2">
                             {eventSubtasks.map((subtask) => (
                               <li
-                                className="border-l-4 border-zinc-300 bg-zinc-50 px-3 py-2 text-sm"
+                                className="relative max-h-28 overflow-hidden border-l-4 border-zinc-300 bg-zinc-50 text-sm"
                                 key={subtask.id}
                               >
-                                <div className="flex items-start justify-between gap-2">
-                                  <p className="font-semibold">
+                                <button
+                                  className="block w-full px-3 py-2 pr-11 text-left transition hover:ring-1 hover:ring-zinc-300 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                                  onClick={() =>
+                                    openSubtaskDetails(
+                                      subtask,
+                                      tripEvent.fullDate,
+                                    )
+                                  }
+                                  type="button"
+                                >
+                                  <span className="block font-semibold">
                                     {subtask.time ? `${subtask.time} - ` : ""}
                                     {subtask.title}
-                                  </p>
-                                  <button
-                                    aria-label={`Remove ${subtask.title}`}
-                                    className="flex h-6 w-6 shrink-0 items-center justify-center border border-zinc-300 bg-white text-xs font-bold text-zinc-500 transition hover:border-rose-400 hover:text-rose-700"
-                                    onClick={() => removeSubtask(subtask.id)}
-                                    title="Remove subtask"
-                                    type="button"
-                                  >
-                                    x
-                                  </button>
-                                </div>
-                                {subtask.location ? (
-                                  <p className="mt-1 text-xs font-semibold text-teal-800">
-                                    {subtask.location}
-                                  </p>
-                                ) : null}
+                                  </span>
+                                  {subtask.location ? (
+                                    <span className="mt-1 block text-xs font-semibold text-teal-800">
+                                      {subtask.location}
+                                    </span>
+                                  ) : null}
+                                </button>
+                                <button
+                                  aria-label={`Remove ${subtask.title}`}
+                                  className="absolute right-2 top-2 flex h-6 w-6 shrink-0 items-center justify-center border border-zinc-300 bg-white text-xs font-bold text-zinc-500 transition hover:border-rose-400 hover:text-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                                  onClick={() => removeSubtask(subtask.id)}
+                                  title="Remove subtask"
+                                  type="button"
+                                >
+                                  x
+                                </button>
                               </li>
                             ))}
                           </ul>
@@ -696,6 +754,77 @@ export default function TripCalendar({
               </button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {selectedDetail ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 px-4 py-6"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeTaskDetails();
+            }
+          }}
+        >
+          <section className="max-h-[min(80vh,42rem)] w-full max-w-2xl overflow-auto border border-zinc-200 bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-5 border-b border-zinc-200 pb-4">
+              <div className="min-w-0">
+                <p className="text-sm font-bold uppercase text-teal-700">
+                  {selectedDetail.kind}
+                </p>
+                <h2 className="mt-1 text-2xl font-bold leading-tight">
+                  {selectedDetail.title}
+                </h2>
+                <p className="mt-2 text-sm font-semibold text-zinc-500">
+                  {selectedDetail.eyebrow}
+                </p>
+              </div>
+              <button
+                aria-label="Close task details"
+                className="flex h-8 w-8 shrink-0 items-center justify-center border border-zinc-300 bg-white text-sm font-bold text-zinc-500 transition hover:border-zinc-500 hover:text-zinc-950"
+                onClick={closeTaskDetails}
+                title="Close"
+                type="button"
+              >
+                x
+              </button>
+            </div>
+
+            <div className="grid gap-4 py-5">
+              {selectedDetail.time ? (
+                <div>
+                  <p className="text-xs font-bold uppercase text-zinc-500">
+                    Time
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-zinc-950">
+                    {selectedDetail.time}
+                  </p>
+                </div>
+              ) : null}
+
+              {selectedDetail.location ? (
+                <div>
+                  <p className="text-xs font-bold uppercase text-zinc-500">
+                    Location
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-teal-800">
+                    {selectedDetail.location}
+                  </p>
+                </div>
+              ) : null}
+
+              {selectedDetail.note ? (
+                <div>
+                  <p className="text-xs font-bold uppercase text-zinc-500">
+                    Notes
+                  </p>
+                  <p className="mt-2 break-words text-sm leading-6 text-zinc-700">
+                    {renderNote(selectedDetail.note)}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          </section>
         </div>
       ) : null}
     </main>
